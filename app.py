@@ -1,98 +1,81 @@
 import tensorflow as tf
-from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img, img_to_array
-from tensorflow.keras import layers, models
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
 import numpy as np
-import os
 import streamlit as st
+import os
 
 # ==============================
 # SETTINGS
 # ==============================
 IMG_SIZE = 128
-BATCH_SIZE = 32
-EPOCHS = 3   # increase later for better accuracy
 MODEL_PATH = "new_plant_model.h5"
-DATASET_PATH = "dataset/Plant_leave_diseases_dataset_without_augmentation"
 
 st.set_page_config(page_title="Plant Disease Detection", layout="centered")
 
 st.title("🌾 फसल रोग पहचान प्रणाली")
 
 # ==============================
-# LOAD DATA
+# LOAD MODEL
 # ==============================
 @st.cache_resource
-def load_data():
-    datagen = ImageDataGenerator(rescale=1./255, validation_split=0.2)
+def load_model():
+    if not os.path.exists(MODEL_PATH):
+        st.error("❌ Model file नहीं मिला!")
+        return None
+    return tf.keras.models.load_model(MODEL_PATH)
 
-    train = datagen.flow_from_directory(
-        DATASET_PATH,
-        target_size=(IMG_SIZE, IMG_SIZE),
-        batch_size=BATCH_SIZE,
-        class_mode="categorical",
-        subset="training"
-    )
-
-    val = datagen.flow_from_directory(
-        DATASET_PATH,
-        target_size=(IMG_SIZE, IMG_SIZE),
-        batch_size=BATCH_SIZE,
-        class_mode="categorical",
-        subset="validation"
-    )
-
-    return train, val
-
-train_data, val_data = load_data()
-class_labels = list(train_data.class_indices.keys())
-num_classes = len(class_labels)
+model = load_model()
 
 # ==============================
-# LOAD / TRAIN MODEL
+# CLASS LABELS (FULL LIST ✅)
 # ==============================
-@st.cache_resource
-def load_or_train_model():
-    if os.path.exists(MODEL_PATH):
-        return tf.keras.models.load_model(MODEL_PATH)
-
-    st.warning("⚡ Model नहीं मिला → Training शुरू हो रही है...")
-
-    model = models.Sequential([
-        layers.Conv2D(32, (3,3), activation='relu', input_shape=(IMG_SIZE, IMG_SIZE, 3)),
-        layers.MaxPooling2D(2,2),
-
-        layers.Conv2D(64, (3,3), activation='relu'),
-        layers.MaxPooling2D(2,2),
-
-        layers.Conv2D(128, (3,3), activation='relu'),
-        layers.MaxPooling2D(2,2),
-
-        layers.Flatten(),
-        layers.Dense(128, activation='relu'),
-        layers.Dense(num_classes, activation='softmax')
-    ])
-
-    model.compile(
-        optimizer='adam',
-        loss='categorical_crossentropy',
-        metrics=['accuracy']
-    )
-
-    with st.spinner("🚀 Model training चल रही है..."):
-        model.fit(train_data, epochs=EPOCHS, validation_data=val_data)
-
-    model.save(MODEL_PATH)
-    st.success("✅ Model train होकर save हो गया!")
-
-    return model
-
-model = load_or_train_model()
+class_labels = [
+"Apple___Apple_scab",
+"Apple___Black_rot",
+"Apple___Cedar_apple_rust",
+"Apple___healthy",
+"Blueberry___healthy",
+"Cherry___Powdery_mildew",
+"Cherry___healthy",
+"Corn___Cercospora_leaf_spot Gray_leaf_spot",
+"Corn___Common_rust",
+"Corn___Northern_Leaf_Blight",
+"Corn___healthy",
+"Grape___Black_rot",
+"Grape___Esca_(Black_Measles)",
+"Grape___Leaf_blight_(Isariopsis_Leaf_Spot)",
+"Grape___healthy",
+"Orange___Haunglongbing_(Citrus_greening)",
+"Peach___Bacterial_spot",
+"Peach___healthy",
+"Pepper,_bell___Bacterial_spot",
+"Pepper,_bell___healthy",
+"Potato___Early_blight",
+"Potato___Late_blight",
+"Potato___healthy",
+"Raspberry___healthy",
+"Soybean___healthy",
+"Squash___Powdery_mildew",
+"Strawberry___Leaf_scorch",
+"Strawberry___healthy",
+"Tomato___Bacterial_spot",
+"Tomato___Early_blight",
+"Tomato___Late_blight",
+"Tomato___Leaf_Mold",
+"Tomato___Septoria_leaf_spot",
+"Tomato___Spider_mites",
+"Tomato___Target_Spot",
+"Tomato___Yellow_Leaf_Curl_Virus",
+"Tomato___mosaic_virus",
+"Tomato___healthy"
+]
 
 # ==============================
 # DOWNLOAD BUTTON
 # ==============================
-with open(MODEL_PATH, "rb") as f:
-    st.download_button("📥 मॉडल डाउनलोड करें", f, file_name="plant_model.h5")
+if os.path.exists(MODEL_PATH):
+    with open(MODEL_PATH, "rb") as f:
+        st.download_button("📥 मॉडल डाउनलोड करें", f, file_name="plant_model.h5")
 
 # ==============================
 # IMAGE UPLOAD
@@ -102,7 +85,8 @@ uploaded_file = st.file_uploader("📷 पत्ती की फोटो अ�
 # ==============================
 # PREDICTION
 # ==============================
-if uploaded_file is not None:
+if uploaded_file is not None and model is not None:
+
     st.image(uploaded_file, caption="अपलोड की गई फोटो")
 
     img = load_img(uploaded_file, target_size=(IMG_SIZE, IMG_SIZE))
@@ -113,7 +97,12 @@ if uploaded_file is not None:
     class_index = np.argmax(pred)
     confidence = np.max(pred)
 
-    result = class_labels[class_index]
+    # 🔥 SAFE FIX (no crash)
+    if class_index < len(class_labels):
+        result = class_labels[class_index]
+    else:
+        result = "Unknown"
+
     clean_result = result.replace("___"," - ").replace("_"," ")
 
     st.success(f"🌿 बीमारी: {clean_result}")
